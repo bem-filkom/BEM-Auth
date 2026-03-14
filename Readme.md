@@ -3,7 +3,7 @@
 Library Go untuk autentikasi SSO (Single Sign-On) Universitas Brawijaya menggunakan protokol SAML via IAM UB (Keycloak).
 
 ```
-go get github.com/bem-ub/bem-auth
+go get github.com/bem-filkom/bem-auth
 ```
 
 ---
@@ -31,7 +31,7 @@ fmt.Println(details.StudyProgram) // Teknik Informatika
 
 ### Via GitHub
 ```bash
-go get github.com/bem-ub/bem-auth
+go get github.com/bem-filkom/bem-auth
 go mod tidy
 ```
 
