@@ -24,6 +24,7 @@ type StudentDetails struct {
 	Faculty            string
 	StudyProgram       string
 	FileFILKOMPhotoURL string
+	Angkatan           int    // tahun angkatan, misal 2024
 }
 
 // SAMLResponse adalah root element dari XML SAML

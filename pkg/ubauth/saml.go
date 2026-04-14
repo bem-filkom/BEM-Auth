@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
+	"strconv"
 )
 
 // ParseSAMLResponse men-decode dan mem-parse SAML response base64 dari IAM UB,
@@ -41,11 +42,16 @@ func ParseSAMLResponse(samlBase64 string) (*StudentDetails, error) {
 		}
 	}
 
-	// Generate URL foto dari NIM (2 digit pertama = angkatan)
+	// Generate URL foto dan hitung angkatan dari NIM (2 digit pertama)
+	// Contoh: NIM "245150..." → yearPrefix "24" → Angkatan 2024
 	if len(studentDetails.NIM) >= 2 {
 		yearPrefix := studentDetails.NIM[:2]
 		nim := studentDetails.NIM
 		studentDetails.FileFILKOMPhotoURL = fmt.Sprintf(FileFILKOMPhotoURL, yearPrefix, nim)
+
+		if digit, err := strconv.Atoi(yearPrefix); err == nil {
+			studentDetails.Angkatan = 2000 + digit
+		}
 	}
 
 	return studentDetails, nil

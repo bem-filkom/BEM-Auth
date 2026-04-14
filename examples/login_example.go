@@ -46,11 +46,12 @@ func main() {
 
 	fmt.Println("Login berhasil!")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("  Nama       : %s\n", details.FullName)
-	fmt.Printf("  NIM        : %s\n", details.NIM)
-	fmt.Printf("  Email      : %s\n", details.Email)
-	fmt.Printf("  Fakultas   : %s\n", details.Faculty)
-	fmt.Printf("  Prodi      : %s\n", details.StudyProgram)
+	fmt.Printf("  Nama        : %s\n", details.FullName)
+	fmt.Printf("  NIM         : %s\n", details.NIM)
+	fmt.Printf("  Angkatan    : %d\n", details.Angkatan)
+	fmt.Printf("  Email       : %s\n", details.Email)
+	fmt.Printf("  Fakultas    : %s\n", details.Faculty)
+	fmt.Printf("  Prodi       : %s\n", details.StudyProgram)
 	fmt.Printf("  Foto FILKOM : %s\n", details.FileFILKOMPhotoURL)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
