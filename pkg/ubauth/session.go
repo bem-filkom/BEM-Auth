@@ -27,7 +27,8 @@ func GetSession() (*Session, error) {
 		},
 	}
 
-	req, err := http.NewRequest("GET", BronesURL, nil)
+	dynamicURL := fmt.Sprintf(BronesURL, GenerateUUID(), GenerateUUID())
+	req, err := http.NewRequest("GET", dynamicURL, nil)
 	if err != nil {
 		return session, &AuthError{
 			Code:    ErrNetworkError,

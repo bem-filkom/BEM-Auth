@@ -1,10 +1,18 @@
 package ubauth
 
 import (
+	"crypto/rand"
 	"fmt"
 	"strings"
 	"unicode"
 )
+
+// GenerateUUID membuat UUID v4-like string random
+func GenerateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
 
 // GetSubstringBetween mengambil substring di antara prefix dan suffix
 func GetSubstringBetween(prefix, suffix, input string) (string, error) {

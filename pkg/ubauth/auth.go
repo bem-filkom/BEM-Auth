@@ -1,6 +1,7 @@
 package ubauth
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -157,7 +158,16 @@ func Auth(username, password string) (*StudentDetails, error) {
 		return studentDetails, &AuthError{Code: ErrOIDCParseFailed, Message: "failed to parse token response"}
 	}
 
-	// Step 4: Fetch Profile from API UB
+	// Karena OIDC claims kurang lengkap (tidak ada Fakultas & Prodi),
+	// kita harus panggil API getProfil.
+	// Untuk bypass Cloudflare TLS/HTTP2 Fingerprinting di server (Prod),
+	// kita paksa gunakan HTTP/1.1 dengan mematikan HTTP/2.
+	tr := &http.Transport{
+		ForceAttemptHTTP2: false,
+		TLSNextProto:      make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	}
+	apiClient := &http.Client{Transport: tr}
+
 	reqProfil, err := http.NewRequest("GET", "https://api.ub.ac.id/siam/mahasiswa/getProfil", nil)
 	if err != nil {
 		return studentDetails, &AuthError{Code: ErrNetworkError, Message: "failed to create getProfil request"}
@@ -168,7 +178,7 @@ func Auth(username, password string) (*StudentDetails, error) {
 	reqProfil.Header.Set("Authorization", "Bearer "+tokenData.AccessToken)
 	reqProfil.Header.Set("Accept", "application/json")
 
-	respProfil, err := session.Client.Do(reqProfil)
+	respProfil, err := apiClient.Do(reqProfil)
 	if err != nil {
 		return studentDetails, &AuthError{Code: ErrNetworkError, Message: "failed to perform getProfil request"}
 	}
@@ -195,12 +205,6 @@ func Auth(username, password string) (*StudentDetails, error) {
 		}
 	}
 
-	// // Tampilkan raw JSON untuk debug di console (bisa dihapus nanti jika sudah stabil)
-	// profilJSON, _ := json.MarshalIndent(profilArray, "", "  ")
-	// fmt.Println("=== DEBUG PROFIL API ===")
-	// fmt.Println(string(profilJSON))
-	// fmt.Println("========================")
-
 	if len(profilArray) > 0 {
 		data := profilArray[0]
 
@@ -219,25 +223,29 @@ func Auth(username, password string) (*StudentDetails, error) {
 		if angkatan, ok := data["ANGKATAN"].(float64); ok {
 			studentDetails.ANGKATAN = int(angkatan)
 		}
+	}
 
-		// Email tidak ada di getProfil, kita ambil dari id_token
-		parts := strings.Split(tokenData.IdToken, ".")
-		if len(parts) >= 2 {
-			if payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
-				var claims map[string]interface{}
-				if json.Unmarshal(payloadBytes, &claims) == nil {
-					if email, ok := claims["email"].(string); ok {
-						studentDetails.Email = email
-					}
+	// Email diambil dari JWT
+	parts := strings.Split(tokenData.IdToken, ".")
+	if len(parts) >= 2 {
+		payload := parts[1]
+		if l := len(payload) % 4; l > 0 {
+			payload += strings.Repeat("=", 4-l)
+		}
+		if payloadBytes, err := base64.URLEncoding.DecodeString(payload); err == nil {
+			var claims map[string]interface{}
+			if json.Unmarshal(payloadBytes, &claims) == nil {
+				if email, ok := claims["email"].(string); ok {
+					studentDetails.Email = email
 				}
 			}
 		}
+	}
 
-		// Fill photo URL (tetap gunakan pola lama FILKOM atau dari API SIAM)
-		if studentDetails.NIM != "" && len(studentDetails.NIM) >= 2 {
-			angkatanStr := studentDetails.NIM[:2]
-			studentDetails.FileFILKOMPhotoURL = fmt.Sprintf(FileFILKOMPhotoURL, angkatanStr, studentDetails.NIM)
-		}
+	// Isi foto default
+	if studentDetails.NIM != "" && len(studentDetails.NIM) >= 2 {
+		angkatanStr := studentDetails.NIM[:2]
+		studentDetails.FileFILKOMPhotoURL = fmt.Sprintf(FileFILKOMPhotoURL, angkatanStr, studentDetails.NIM)
 	}
 
 	return studentDetails, nil
