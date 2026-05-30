@@ -81,29 +81,13 @@ func GetSession() (*Session, error) {
 	if err != nil {
 		return session, &AuthError{Code: ErrSessionFailed, Message: "failed to get form action URL from HTML"}
 	}
-
-	sessionCode, err := GetSubstringBetween("session_code=", "&amp", fullURL)
-	if err != nil {
-		return session, &AuthError{Code: ErrSessionFailed, Message: "failed to get session_code from URL"}
-	}
-
-	execution, err := GetSubstringBetween("execution=", "&amp", fullURL)
-	if err != nil {
-		return session, &AuthError{Code: ErrSessionFailed, Message: "failed to get execution from URL"}
-	}
-
-	tabIDSlice := strings.Split(fullURL, "tab_id=")
-	if len(tabIDSlice) < 2 {
-		return session, &AuthError{Code: ErrSessionFailed, Message: "failed to get tab_id from URL"}
-	}
+	fullURL = strings.ReplaceAll(fullURL, "&amp;", "&")
 
 	session.Client = client
 	session.AuthSessionID = authSessionID
 	session.AuthSessionIDLegacy = authSessionIDLegacy
 	session.KCRestart = kcRestart
-	session.SessionCode = sessionCode
-	session.Execution = execution
-	session.TabID = tabIDSlice[1]
+	session.LoginActionURL = fullURL
 
 	return session, nil
 }

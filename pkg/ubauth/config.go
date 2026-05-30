@@ -2,13 +2,11 @@ package ubauth
 
 // URL endpoint IAM dan portal UB
 const (
-	BronesURL = "https://brone.ub.ac.id/my/"
+	BronesURL = "https://iam.ub.ac.id/auth/realms/ub/protocol/openid-connect/auth?client_id=siam&redirect_uri=https%3A%2F%2Fsiam.ub.ac.id%2Fmahasiswa&state=a2c37656-94e8-4f96-9777-a7e358ca118a&response_mode=fragment&response_type=code&scope=openid&nonce=3625d9cd-68d7-4b8c-8af2-860868b92963"
 
-	BronesReferer = "https://brone.ub.ac.id/"
+	BronesReferer = "https://siam.ub.ac.id/"
 
-	// login IAM UB (Keycloak)
-	// Format: session_code, execution, tab_id
-	IAMAuthURL = "https://iam.ub.ac.id/auth/realms/ub/login-actions/authenticate?session_code=%s&execution=%s&client_id=brone.ub.ac.id&tab_id=%s"
+	IAMTokenURL = "https://iam.ub.ac.id/auth/realms/ub/protocol/openid-connect/token"
 
 	FileFILKOMPhotoURL = "https://file-filkom.ub.ac.id/fileupload/assets/foto/20%s/%s.png"
 )

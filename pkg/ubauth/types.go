@@ -1,7 +1,6 @@
 package ubauth
 
 import (
-	"encoding/xml"
 	"net/http"
 )
 
@@ -11,9 +10,7 @@ type Session struct {
 	AuthSessionID       string
 	AuthSessionIDLegacy string
 	KCRestart           string
-	SessionCode         string
-	Execution           string
-	TabID               string
+	LoginActionURL      string
 }
 
 // StudentDetails berisi informasi mahasiswa yang didapat dari SAML response
@@ -24,32 +21,9 @@ type StudentDetails struct {
 	Faculty            string
 	StudyProgram       string
 	FileFILKOMPhotoURL string
-	Angkatan           int    // tahun angkatan, misal 2024
+	ANGKATAN           int    // tahun angkatan, misal 2024
 }
 
-// SAMLResponse adalah root element dari XML SAML
-type SAMLResponse struct {
-	XMLName   xml.Name  `xml:"Response"`
-	Assertion Assertion `xml:"Assertion"`
-}
-
-// Assertion adalah bagian Assertion dari SAML XML
-type Assertion struct {
-	XMLName            xml.Name           `xml:"Assertion"`
-	AttributeStatement AttributeStatement `xml:"AttributeStatement"`
-}
-
-// AttributeStatement menampung daftar atribut dalam SAML
-type AttributeStatement struct {
-	XMLName    xml.Name    `xml:"AttributeStatement"`
-	Attributes []Attribute `xml:"Attribute"`
-}
-
-// Attribute merepresentasikan satu atribut SAML (nama + nilai)
-type Attribute struct {
-	Name  string `xml:"Name,attr"`
-	Value string `xml:"AttributeValue"`
-}
 
 // AuthError adalah custom error type untuk membedakan jenis kesalahan auth
 type AuthError struct {
@@ -68,6 +42,6 @@ const (
 	ErrInvalidCredentials AuthErrorCode = iota // username/password salah
 	ErrSessionFailed                           // gagal mendapatkan session
 	ErrNetworkError                            // error jaringan
-	ErrSAMLParseFailed                         // gagal parse SAML
+	ErrOIDCParseFailed                         // gagal parse OIDC
 	ErrUnexpected                              // error tak terduga
 )

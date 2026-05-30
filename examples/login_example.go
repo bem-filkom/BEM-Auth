@@ -34,9 +34,9 @@ func main() {
 			case ubauth.ErrSessionFailed:
 				log.Fatal("Gagal mendapatkan session dari server UB")
 			case ubauth.ErrNetworkError:
-				log.Fatal("Gagal terhubung ke server — cek koneksi internet")
-			case ubauth.ErrSAMLParseFailed:
-				log.Fatal("Gagal memproses token autentikasi")
+				log.Fatal("Gagal terhubung ke server cek koneksi internet")
+			case ubauth.ErrOIDCParseFailed:
+				log.Fatalf("Gagal memproses token autentikasi: %v", err)
 			default:
 				log.Fatalf("Error tak dikenal: %v", err)
 			}
@@ -48,7 +48,7 @@ func main() {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Printf("  Nama        : %s\n", details.FullName)
 	fmt.Printf("  NIM         : %s\n", details.NIM)
-	fmt.Printf("  Angkatan    : %d\n", details.Angkatan)
+	fmt.Printf("  Angkatan    : %d\n", details.ANGKATAN)
 	fmt.Printf("  Email       : %s\n", details.Email)
 	fmt.Printf("  Fakultas    : %s\n", details.Faculty)
 	fmt.Printf("  Prodi       : %s\n", details.StudyProgram)
