@@ -1,39 +1,140 @@
 package ubauth
 
 import (
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
 // Auth melakukan autentikasi SSO UB dengan username dan password.
-
+// Fungsi ini akan mencoba metode Brone terlebih dahulu. Jika gagal, akan fallback ke metode Siam (OIDC).
+//
 // Return:
 //   - *StudentDetails: data mahasiswa jika login berhasil
 //   - error: nil jika sukses, atau *AuthError dengan kode error spesifik
-
-// Kode error yang mungkin:
-//   - ErrInvalidCredentials : username/password salah
-//   - ErrSessionFailed      : gagal mendapatkan session awal
-//   - ErrNetworkError       : masalah koneksi jaringan
-//   - ErrOIDCParseFailed    : gagal memproses OIDC token
-//   - ErrUnexpected         : error tidak dikenali
-
 func Auth(username, password string) (*StudentDetails, error) {
+	// 1. Coba metode Brone (SAML)
+	details, err := AuthBrone(username, password)
+	if err == nil {
+		return details, nil
+	}
+
+	// Jika Brone error (misal server down, timeout, dsb), fallback ke Siam
+	// Catatan: Anda bisa menambahkan log di sini jika ingin tahu kapan fallback terjadi
+	// log.Printf("Brone failed: %v. Fallback to Siam...", err)
+
+	// 2. Fallback ke metode Siam (OIDC) tanpa getProfil
+	return AuthSiam(username, password)
+}
+
+// AuthBrone melakukan autentikasi menggunakan portal brone.ub.ac.id (SAML).
+// Metode ini lebih disukai karena mengembalikan data Fakultas & Prodi langsung dari response XML.
+func AuthBrone(username, password string) (*StudentDetails, error) {
 	studentDetails := new(StudentDetails)
 
-	// cookie dan form parse
-	session, err := GetSession()
+	// Dapatkan session Brone
+	session, err := GetSessionBrone()
 	if err != nil {
 		return studentDetails, err
 	}
 
-	//post ke iam.ub.ac.id
+	// POST ke iam.ub.ac.id menggunakan parameter brone
+	formData := url.Values{}
+	formData.Set("username", username)
+	formData.Set("password", password)
+	formData.Set("credentialId", "")
+
+	loginURL := fmt.Sprintf(IAMAuthURL, session.SessionCode, session.Execution, session.TabID)
+
+	req, err := http.NewRequest("POST", loginURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return studentDetails, &AuthError{
+			Code:    ErrNetworkError,
+			Message: fmt.Sprintf("failed to create POST request: %v", err),
+		}
+	}
+
+	for k, v := range GetHeaders() {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("origin", "null")
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	req.Header.Set("cookie", fmt.Sprintf(
+		"AUTH_SESSION_ID=%s; AUTH_SESSION_ID_LEGACY=%s; KC_RESTART=%s",
+		session.AuthSessionID,
+		session.AuthSessionIDLegacy,
+		session.KCRestart,
+	))
+
+	resp, err := session.Client.Do(req)
+	if err != nil {
+		return studentDetails, &AuthError{
+			Code:    ErrNetworkError,
+			Message: fmt.Sprintf("failed to perform POST request: %v", err),
+		}
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return studentDetails, &AuthError{
+			Code:    ErrNetworkError,
+			Message: fmt.Sprintf("failed to read response body: %v", err),
+		}
+	}
+
+	body := string(respBody)
+
+	// Cek SAML
+	if !strings.Contains(body, "SAMLResponse") {
+		if strings.Contains(body, "Invalid username or password.") {
+			return studentDetails, &AuthError{
+				Code:    ErrInvalidCredentials,
+				Message: "invalid username or password",
+			}
+		}
+		return studentDetails, &AuthError{
+			Code:    ErrUnexpected,
+			Message: "unexpected error: no SAMLResponse in response body",
+		}
+	}
+
+	// Extract SAML
+	samlResponse, err := GetSubstringBetween(`name="SAMLResponse" value="`, `"/>`, body)
+	if err != nil {
+		return studentDetails, &AuthError{
+			Code:    ErrSAMLParseFailed,
+			Message: "failed to extract SAMLResponse value from HTML",
+		}
+	}
+
+	studentDetails, err = ParseSAMLResponse(samlResponse)
+	if err != nil {
+		return studentDetails, err
+	}
+
+	return studentDetails, nil
+}
+
+// AuthSiam melakukan autentikasi menggunakan portal siam.ub.ac.id (OIDC).
+// Metode ini digunakan sebagai fallback jika Brone gagal.
+// Untuk menghindari Cloudflare 403, metode ini TIDAK memanggil API getProfil.
+// Hanya mengembalikan NIM (dari username) dan Email (dari JWT token).
+func AuthSiam(username, password string) (*StudentDetails, error) {
+	studentDetails := new(StudentDetails)
+
+	// Dapatkan session Siam
+	session, err := GetSessionSiam()
+	if err != nil {
+		return studentDetails, err
+	}
+
+	// POST ke iam.ub.ac.id menggunakan session siam
 	formData := url.Values{}
 	formData.Set("username", username)
 	formData.Set("password", password)
@@ -158,74 +259,9 @@ func Auth(username, password string) (*StudentDetails, error) {
 		return studentDetails, &AuthError{Code: ErrOIDCParseFailed, Message: "failed to parse token response"}
 	}
 
-	// Karena OIDC claims kurang lengkap (tidak ada Fakultas & Prodi),
-	// kita harus panggil API getProfil.
-	// Untuk bypass Cloudflare TLS/HTTP2 Fingerprinting di server (Prod),
-	// kita paksa gunakan HTTP/1.1 dengan mematikan HTTP/2.
-	tr := &http.Transport{
-		ForceAttemptHTTP2: false,
-		TLSNextProto:      make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
-	}
-	apiClient := &http.Client{Transport: tr}
+	// Kita HAPUS pemanggilan getProfil di sini untuk menghindari 403 Cloudflare.
 
-	reqProfil, err := http.NewRequest("GET", "https://api.ub.ac.id/siam/mahasiswa/getProfil", nil)
-	if err != nil {
-		return studentDetails, &AuthError{Code: ErrNetworkError, Message: "failed to create getProfil request"}
-	}
-	for k, v := range GetHeaders() {
-		reqProfil.Header.Set(k, v)
-	}
-	reqProfil.Header.Set("Authorization", "Bearer "+tokenData.AccessToken)
-	reqProfil.Header.Set("Accept", "application/json")
-
-	respProfil, err := apiClient.Do(reqProfil)
-	if err != nil {
-		return studentDetails, &AuthError{Code: ErrNetworkError, Message: "failed to perform getProfil request"}
-	}
-	defer respProfil.Body.Close()
-
-	if respProfil.StatusCode != 200 {
-		body, _ := io.ReadAll(respProfil.Body)
-		return studentDetails, &AuthError{
-			Code:    ErrOIDCParseFailed,
-			Message: fmt.Sprintf("failed to get profil, status %d: %s", respProfil.StatusCode, string(body)),
-		}
-	}
-
-	bodyBytes, err := io.ReadAll(respProfil.Body)
-	if err != nil {
-		return studentDetails, &AuthError{Code: ErrNetworkError, Message: "failed to read profil response body"}
-	}
-
-	var profilArray []map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &profilArray); err != nil {
-		return studentDetails, &AuthError{
-			Code:    ErrOIDCParseFailed,
-			Message: fmt.Sprintf("failed to parse profil response, err: %v, body: %s", err, string(bodyBytes)),
-		}
-	}
-
-	if len(profilArray) > 0 {
-		data := profilArray[0]
-
-		if nim, ok := data["NIM"].(string); ok {
-			studentDetails.NIM = nim
-		}
-		if nama, ok := data["NAMA"].(string); ok {
-			studentDetails.FullName = nama
-		}
-		if fakultas, ok := data["FAKULTAS"].(string); ok {
-			studentDetails.Faculty = fakultas
-		}
-		if prodi, ok := data["PROGRAM"].(string); ok {
-			studentDetails.StudyProgram = prodi
-		}
-		if angkatan, ok := data["ANGKATAN"].(float64); ok {
-			studentDetails.ANGKATAN = int(angkatan)
-		}
-	}
-
-	// Email diambil dari JWT
+	// Parse JWT Token terlebih dahulu untuk mengambil Email, NIM (preferred_username), dan Nama
 	parts := strings.Split(tokenData.IdToken, ".")
 	if len(parts) >= 2 {
 		payload := parts[1]
@@ -238,14 +274,34 @@ func Auth(username, password string) (*StudentDetails, error) {
 				if email, ok := claims["email"].(string); ok {
 					studentDetails.Email = email
 				}
+				if pref, ok := claims["preferred_username"].(string); ok {
+					if !strings.Contains(pref, "@") {
+						studentDetails.NIM = pref
+					}
+				}
+				if name, ok := claims["name"].(string); ok {
+					studentDetails.FullName = PascalCase(name)
+				}
 			}
 		}
 	}
 
-	// Isi foto default
+	// Jika masih kosong, asumsikan dari input username pengguna
+	if studentDetails.NIM == "" && !strings.Contains(username, "@") {
+		studentDetails.NIM = username
+	}
+	if studentDetails.Email == "" && strings.Contains(username, "@") {
+		studentDetails.Email = username
+	}
+
+	// Buat URL Foto dan cari Angkatan jika NIM berhasil didapatkan
 	if studentDetails.NIM != "" && len(studentDetails.NIM) >= 2 {
 		angkatanStr := studentDetails.NIM[:2]
 		studentDetails.FileFILKOMPhotoURL = fmt.Sprintf(FileFILKOMPhotoURL, angkatanStr, studentDetails.NIM)
+		
+		if angkatanInt, err := strconv.Atoi(angkatanStr); err == nil {
+			studentDetails.ANGKATAN = 2000 + angkatanInt
+		}
 	}
 
 	return studentDetails, nil
